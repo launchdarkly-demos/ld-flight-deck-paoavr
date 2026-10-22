@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=https://demodepot.launchdarklydemos.com/schemas/demo.schema.json
+schemaVersion: 1
+slug: flight-deck
+name: Flight Deck
+summary: Release AutoPilot live. The GitHub App flags a pull request, then a guarded release rolls out passenger by passenger or rolls back.
+owners:
+  - kcochran@launchdarkly.com
+tags: [release-automation, guarded-rollouts, feature-management]
+media:
+  cover: ./media/cover.png
+links:
+  talkTrack: https://github.com/launchdarkly-demos/ld-kevin-factory-demo/blob/main/docs/enablement/talk-track.md
+  docs: https://github.com/launchdarkly-demos/ld-kevin-factory-demo/blob/main/docs/demo-runbook.md
+parameters:
+  - name: GITHUB_TOKEN
+    label: Your GitHub token
+    type: string
+    secret: true
+    required: false
+    help: >-
+      repo + delete_repo scope, SSO-authorised for launchdarkly-demos, from a GitHub user connected to
+      LaunchDarkly. Creates your disposable repo copy; blank runs the deck without the PR beats.
+  - name: FLIGHT_DECK_OPS_TOKEN
+    label: Operate PIN
+    type: string
+    secret: true
+    required: false
+    help: >-
+      Any passphrase you choose. The deck's Operate menu asks for it once per browser session before it
+      opens PRs, merges, or resets. Leave blank to leave the menu open to anyone who can reach the deck.
+  - name: SIM_RATE
+    label: Simulated passengers per second
+    type: enum
+    options: ["4", "8", "16"]
+    default: "8"
+    help: 8 gives a guarded release enough samples to decide within one-minute steps.
+  - name: SIM_SEED
+    label: Simulation seed
+    type: string
+    default: "7"
+    help: Any integer. Same seed, same passengers.
+runtime:
+  ingress:
+    container: web
+    port: 7777
+    healthCheck: { path: /api/health }
+  containers:
+    - name: web
+      build: { context: . }
+      cpu: 512
+      memory: 1024
+      env:
+        NODE_ENV: production
+        # Template every launch copies. The copy is named ld-flight-deck-<DD_INSTANCE_ID> in the same org,
+        # mapped to the instance's project at start (docker-entrypoint.sh, scripts/launch.mjs), and deleted
+        # when the instance stops. The LaunchDarkly GitHub App is installed org-wide, so the copy is covered.
+        FLIGHT_DECK_TEMPLATE_REPO: launchdarkly-demos/ld-kevin-factory-demo
+      secrets:
+        # Owner-set at /demos/flight-deck/manage. The instance uses the depot's project-writer token
+        # (LD_API_TOKEN) where it can; LD_API_KEY, an account-level token, is the fallback for the
+        # calls that token is refused for (metrics, release policy, the Release AutoPilot repo mapping).
+        - LD_API_KEY
+capabilities: []
+launchdarkly:
+  # One project per instance, created by the depot with the SE's token and deleted at teardown.
+  # The seed is empty on purpose: the GitHub App creates the flags live. The container adds the
+  # guardrail metrics and the release policy (the seed format has neither) and maps its repo.
+  mode: seed
+  seed: ./ld/seed.json
+  apiToken: project-writer
+access:
+  default: sso
+  allowPublic: true
+lifecycle:
+  # A pause stops the container, and the stop tears down this launch's repository and mapping.
+  # Resuming would start over in a new repo mid-demo, so the timers terminate instead.
+  pausable: false
+verify:
+  http:
+    - path: /api/health
+      expectStatus: 200
+      expectBodyContains: '"ok":true'
+    - path: /
+      expectStatus: 200
+      expectBodyContains: Flight Deck
+    - path: /api/state
+      expectStatus: 200

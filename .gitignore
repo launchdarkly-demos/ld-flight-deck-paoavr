@@ -1,0 +1,12 @@
+node_modules/
+.env
+.tmp-snapshots/
+npm-debug.log*
+.DS_Store
+docs/media/frames/
+
+# Demo Depot
+.env.*
+!.env.example
+.dd/
+.env
